@@ -19,6 +19,9 @@ scratch
 docs.json
 __dummy.html
 
+#sublime
+neuralnet.sublime-project
+
 # Code coverage
 *.lst
 
