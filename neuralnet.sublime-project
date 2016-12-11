@@ -1,0 +1,17 @@
+{
+	"folders":
+	[
+		{
+			"name": "neuralnet",
+			"path": "."
+		}
+	],
+	"settings":
+	{
+		"include_paths":
+		[
+			"/home/thorn/Dropbox/code/2016-12-10-neuralNet/source/"
+		],
+		"package_file": "/home/thorn/Dropbox/code/2016-12-10-neuralNet/dub.json"
+	}
+}

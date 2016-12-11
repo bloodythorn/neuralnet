@@ -1,0 +1,9 @@
+{
+	"name": "neuralnet",
+  "homepage": "www.bloodythorn.com",
+	"authors": ["Thomas Green"],
+	"description": "A neural network implemented in D.",
+	"copyright": "Copyright © 2016, Thomas Green",
+	"license": "MIT",
+  "targetName": "scratch"
+}
