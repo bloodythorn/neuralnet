@@ -1,70 +1,59 @@
 module neuralnet;
 
+import std.algorithm;
 import std.conv;
 import std.math;
 import std.numeric;
 import std.random;
 import std.typecons;
+import core.time;
+
+import std.stdio;
 
 class NeuralNet {
-private:
 
-  double[][] m_layers;
-  double[][] m_weights;
-  double[][] m_weightDelta;
-  double[]   m_targets;
-  double[]   m_biases;
-  double[]   m_biasDelta;
+  private double[][] m_layers;
+  private double[][] m_weights;
+  private double[][] m_weightDelta;
 
-  bool wSet = false;
-  bool iSet = false;
-  bool fSet = false;
+  private double[]   m_targets;
+  private double[]   m_biases;
+  private double[]   m_biasDelta;
 
-  uint   m_nInputs = 2;
-  uint   m_nOutputs = 2;
-  uint[] m_nLayers = [3,4,5]; // [2][5,4,3][3,4,5]
-  double m_learnRate = 0.5;
-  double alpha = 0.1;
+  private bool wSet = false;
+  private bool iSet = false;
+  private bool fSet = false;
+  private bool tSet = false;
 
-  const double[] WEIGHT_RANGE = [-0.1, 0.1];
+  private ulong   m_nInputs   = 2;
+  private ulong   m_nOutputs  = 2;
+  private ulong[] m_nLayers   = [2];
+  private double  m_learnRate = 0.1;
+  private double  alpha       = 0.01;
 
-  @property auto m_inputs()
+  private const double[] WEIGHT_RANGE = [-0.1, 0.1];
+
+  public @property auto m_inputs()
     { assert(m_layers.length > 0); return m_layers[0]; }
-  @property auto m_inputs(double[] p_in)
+  private @property auto m_inputs(double[] p_in)
     { return m_layers[0] = p_in.dup ;}
-  @property auto m_outputs()
+  public @property auto m_outputs()
     { assert(m_layers.length > 1); return m_layers[$-1]; }
-  @property auto m_outputs(double[] p_in)
+  private @property auto m_outputs(double[] p_in)
     { assert(m_layers.length > 1); return m_layers[$-1] = p_in; }
-  @property auto m_hiddens()
+  public @property auto m_hiddens()
     { assert(m_layers.length > 2); return m_layers[1..$-1]; }
-  @property auto m_hiddens(double[][] p_in)
+  private @property auto m_hiddens(double[][] p_in)
     { assert(m_layers.length > 2); return m_layers[1..$-1] = p_in; }
 
-public:
+  public this() { init; }
 
-  this() {
-    m_layers.length = 0;
-    m_layers.length++;
-    m_layers[$-1].length = m_nInputs;
-    foreach(a; m_nLayers) {
-      m_layers.length++;
-      m_layers[$-1].length = a;
-    }
-    m_layers.length++;
-    m_layers[$-1].length = m_nOutputs;
-
-    m_weights.length = 1 + m_nLayers.length;
-    m_weightDelta.length = 1 + m_nLayers.length;
-    foreach(i, ref a; m_weights) {
-      a.length = m_layers[i].length * m_layers[i+1].length;
-      m_weightDelta[i].length = m_layers[i].length * m_layers[i+1].length;
-    }
-    m_biases.length = m_weights.length;
-    m_biasDelta.length = m_weights.length;
+  public this(ulong p_in, ulong p_out, ulong[] p_nLayers) {
+    setSize(p_in, p_out, p_nLayers);
+    init;
   }
 
-  void randWeights() {
+  public void randWeights() {
     Random gen;
     foreach(ref a; m_weights)
       foreach(ref b; a)
@@ -76,63 +65,94 @@ public:
     wSet = true;
   }
 
-  void initDeltas(){
+  private void initDeltas(){
     foreach(ref a; m_weightDelta)
       foreach(ref b; a) b = 0.0;
     foreach(ref a; m_biasDelta) a = 0.0;
   }
 
-  void reInit(){
-    wSet = iSet = fSet = false;
-    foreach(ref a; m_layers)
-      foreach(ref b; a)
-        b = double.nan;
-    foreach(ref a; m_weights)
-      foreach(ref b; a)
-        b = double.nan;
+  private void init() {
+    m_layers.length = 0;
+    m_layers.length++;
+    m_layers[$-1].length = m_nInputs;
+    foreach(a; m_nLayers) {
+      m_layers.length++;
+      m_layers[$-1].length = a;
+    }
+    m_layers.length++;
+    m_layers[$-1].length = m_nOutputs;
+
+    m_weights.length = 0;
+    m_weights.length = 1 + m_nLayers.length;
+    m_weightDelta.length = 1 + m_nLayers.length;
+    foreach(i, ref a; m_weights) {
+      a.length = m_layers[i].length * m_layers[i+1].length;
+      m_weightDelta[i].length = m_layers[i].length * m_layers[i+1].length;
+    }
+
+    m_biases.length = 0;
+    m_biases.length = m_weights.length;
+    m_biasDelta.length = 0;
+    m_biasDelta.length = m_weights.length;
+    wSet = iSet = fSet = tSet = false;
+  }
+
+  private void reset(){
+    fSet = false;
+    foreach(ref a; m_layers[1..$]) foreach(ref b; a) b = double.nan;
     initDeltas;
   }
 
-  bool setInput(in double[] p_in) {
-    if(p_in.length != m_nInputs) return false;
+  public void setSize(ulong p_in, ulong p_out, ulong[] p_nLayers) {
+    m_nInputs = p_in;
+    m_nOutputs = p_out;
+    m_nLayers = p_nLayers.dup;
+    init;
+  }
+
+  public bool setInputs(in double[] p_in) {
+    if(m_inputs.length != p_in.length) return false;
+    reset;
     m_inputs = p_in.dup;
     iSet = true;
-    fSet = false;
     return true;
   }
 
-  bool setWeights(double[][] p_weights,double[] p_bWeights) {
+  public bool setWeights(double[][] p_weights,double[] p_bWeights) {
     /* Verify Input */
     if(p_weights.length != m_weights.length) return false;
     if(p_bWeights.length != m_weights.length) return false;
     foreach(i, a; m_weights)
       if(a.length != p_weights[i].length) return false;
+    reset;
     m_weights = p_weights.dup;
     m_biases = p_bWeights.dup;
     initDeltas;
     wSet = true;
-    fSet = false;
     return true;
   }
 
-  bool setTargets(double[] p_in) {
+  public bool setTargets(double[] p_in) {
     if(p_in.length != m_nOutputs) return false;
+    reset;
     m_targets = p_in.dup;
+    tSet = true;
     return true;
   }
 
-  bool feedForward() {
-    if(!wSet || !iSet || fSet) return false;
+  public bool feedForward() {
+    if(!wSet || !iSet || !tSet || fSet) return false;
 
     /* Sigmoid Lambda */
-    auto sigmoid = (double a) => 1/(1+E^^(-a));
+    auto sigmoid = (double pa) => 1/(1+E^^(-pa));
+    auto wi = (long pz, long px, long py) => py*m_layers[pz].length+px;
 
     /* Cycle Through each layer n+1 */
     foreach(n, ref a; m_layers[1..$])
       foreach(y, ref b; a) { /* y/y b node with each c node */
         b = 0.0;
         foreach(x, c; m_layers[n])
-          b += c*m_weights[n][y*m_layers[n].length+x];
+          b += c*m_weights[n][wi(n, x, y)];
         b+= m_biases[n];
         b = sigmoid(b);
       }
@@ -141,17 +161,16 @@ public:
     return true;
   }
 
-  auto calcError() {
+  public auto calcError() {
     FPTemporary!double totalError = 0.0; // Init TE
-    foreach(i, a; m_outputs)
-      totalError += (1.0/2.0) * (m_targets[i]-a)^^2;
+    if(!fSet) return totalError;
+    foreach(i, a; m_outputs) totalError += (1.0/2.0) * (m_targets[i]-a)^^2;
     return totalError;
   }
 
-  bool backProp() {
+  public bool backProp() {
     if(!fSet) return false;
 
-    FPTemporary!double eTotal = calcError;
     FPTemporary!double[][] weightDelta;
     weightDelta.length = m_weights.length;
     foreach(i, a; m_weights)
@@ -162,124 +181,151 @@ public:
     FPTemporary!double[] deltaOld;
     FPTemporary!double biasOld;
 
-    //l = w % l.length
-    //r = w / l.length
+    /* Index Finders */
+    auto OKayI = (ulong pn, ulong px) => px/m_layers[pn].length;
+    auto OJayI = (ulong pn, ulong px) => px%m_layers[pn].length;
+
+    /* Object Finders */
+    auto OKay = (ulong pn, ulong px)
+      { return m_layers[pn+1][OKayI(pn,px)]; };
+    auto OJay = (ulong pn, ulong px)
+      { return m_layers[pn][OJayI(pn,px)]; };
+    auto Target = (ulong pn, ulong px)
+      { return m_targets[OKayI(pn,px)]; };
+    auto oldDelta = (ulong pn, ulong px)
+      { return deltaOld[OKayI(pn, px)]; };
+
+    /* Formulas */
+    auto deltak = (double ok, double tgt)
+      { return ok*(1-ok)*(tgt-ok); };
+    auto deltaj = (double ok, double wSum, double old)
+      { return ok*(1-ok)*wSum*old; };
+    auto DeltaK = (ulong pn, ulong px)
+      { return deltak(OKay(pn,px), Target(pn,px)); };
+    auto DeltaJ = (ulong pn, ulong px)
+      { return deltaj(OKay(pn,px), sum(m_weights[pn+1]), oldDelta(pn, px)); };
+
+    auto DeltaW = (ulong pn, ulong px, double delegate(ulong, ulong) delta)
+      { return m_learnRate*delta(pn,px)*OJay(pn,px); };
+
+    /* Avgs */
+    auto AvgDeltaK = (ulong pn) {
+      FPTemporary!double[] deltas;
+      foreach(i, o; m_layers[pn+1]) deltas ~= deltak(o, m_targets[i]);
+      return sum(deltas)/deltas.length;
+    };
+    auto AvgDeltaJ = (ulong pn) {
+      FPTemporary!double[] deltas;
+      foreach(i, o; m_layers[pn+1])
+        deltas ~= deltaj(o, sum(m_weights[pn+1]), biasOld);
+      return sum(deltas)/deltas.length;
+    };
+
+    /* Bias Function */
+    auto DeltaBias = (ulong pn, double delegate(ulong) avg)
+      { return m_learnRate*avg(pn)*1.0; };
+
     /* Process the Layers */
     foreach_reverse(n, a; m_weights){
-
-      if(n == m_weights.length-1) {
-        /* jk iteration */
+      if(n == m_weights.length-1) {/* jk iteration */
         foreach(x, b; a) {
-          FPTemporary!double delta =
-            m_layers[n+1][x/m_layers[n].length]*
-            (1-m_layers[n+1][x/m_layers[n].length])*
-            (m_targets[x/m_layers[n].length]-
-            m_layers[n+1][x/m_layers[n].length]);
-          deltaOld ~= delta;
-          FPTemporary!double oJay = m_layers[n][x%m_layers[n].length];
-          weightDelta[n][x] = m_learnRate*delta*oJay;
+          weightDelta[n][x] = DeltaW(n,x, DeltaK);
+          deltaOld ~= DeltaK(n,x);
         }
-
         /* Do the same for the biases */
-        FPTemporary!double[] deltas;
-        foreach(i, o; m_layers[n+1]) deltas ~= o*(1-o)*(m_targets[i]-o);
-        FPTemporary!double delta = 0.0;
-        foreach(d; deltas) delta += d;
-        delta /= deltas.length;
-        biasOld = delta;
-        FPTemporary!double oJay = 1.0;
-        biasDelta[n] = m_learnRate*delta*oJay;
-
-      } else {
-        /* ij iterations */
-        deltaNew.length = 0;
+        biasDelta[n] = DeltaBias(n, AvgDeltaK);
+        biasOld = AvgDeltaK(n);
+      } else { /* ij iterations */
         foreach(x, b; a) {
-          FPTemporary!double weightSum = 0.0;
-          foreach(w; m_weights[n+1]) weightSum += w;
-          FPTemporary!double delta =
-            m_layers[n+1][x/m_layers[n].length]*
-            (1-m_layers[n+1][x/m_layers[n].length])*
-            weightSum * deltaOld[x/m_layers[n].length];
-          deltaNew ~= delta;
-          FPTemporary!double xi = m_layers[n][x%m_layers[n].length];
-          weightDelta[n][x] = m_learnRate*delta*xi;
+          weightDelta[n][x] = DeltaW(n,x, DeltaJ);
+          deltaNew ~= DeltaJ(n,x);
         }
-
         /* Do the same for the biases */
-        FPTemporary!double weightSum = 0.0;
-        foreach(w; m_weights[n+1]) weightSum += w;
-        FPTemporary!double[] deltas;
-        foreach(i, o; m_layers[n+1]) deltas ~= o*(1-o)*weightSum * biasOld;
-        FPTemporary!double delta = 0.0;
-        foreach(d; deltas) delta += d;
-        delta /= deltas.length;
-        biasOld = delta;
-        FPTemporary!double oJay = 1.0;
-        biasDelta[n] = m_learnRate*delta*oJay;
-
+        biasDelta[n] = DeltaBias(n, AvgDeltaJ);
+        biasOld = AvgDeltaJ(n);
         /* End of cycle maintenance */
         deltaOld = deltaNew.dup;
+        deltaNew.length = 0;
       }
     }
 
-    /* Apply deltas *//*TODO Apply Momentum */
-    foreach(y, ref a; m_weights)
-      foreach(x, ref b; a)
-        b += weightDelta[y][x];
+    /* Apply deltas *//* Apply Momentum */
+    foreach(y, ref a; m_weights) foreach(x, ref b; a)
+      b += weightDelta[y][x] + alpha * m_weightDelta[y][x];
 
     foreach(y, ref a; m_biases)
-      a += biasDelta[y];
+      a += biasDelta[y] + alpha * m_biasDelta[y];
 
-    foreach(y, ref a; m_weightDelta)
-      foreach(x, ref b; a) b = weightDelta[y][x];
-    foreach(x, ref a; m_biasDelta) a = biasDelta[x];
+    m_weightDelta = weightDelta.dup;
+    m_biasDelta = biasDelta.dup;
     fSet = false;
     return true;
   }
 
-  Nullable!double trainCycle() {
-    Nullable!double output;
-    if(!wSet || !iSet || fSet) return output;
-
-    bool result = feedForward && backProp && feedForward;
-    if(result) output = calcError;
-
-    return output;
-  }
-
-  Tuple!(double, double) train(in ulong p_cyc) {
+  public auto trainCycle() {
     Tuple!(double, double) output;
-    if(!wSet || !iSet || fSet) return output;
-    bool result = feedForward;
-    if(!result) return output;
-
+    if(!wSet || !iSet || !tSet) return output;
+    bool result;
+    if(!fSet) {
+      result = feedForward;
+      if(!result) return output;
+    }
     output[0] = calcError;
-    for(uint i = 0; i < p_cyc; ++i) result &= backProp && feedForward;
-    if(result) output[1] = calcError;
 
+    result = backProp && feedForward;
+    if(!result) return output;
+    output[1] = calcError;
     return output;
   }
 
-  Nullable!ulong train(double p_thresh) {
-    Nullable!ulong output;
-    if(!wSet || !iSet || fSet) return output;
-    bool result = feedForward;
-    if(!result) return output;
-
-    FPTemporary!double error = double.max;
-    output =0;
-    while(result && error > p_thresh) {
-      result &= backProp && feedForward;
-      error = calcError;
-      output++;
+  public auto train(in ulong p_cyc) {
+    Tuple!(double, double) output;
+    bool result;
+    if(!fSet) {
+      result = feedForward;
+      if(!result) return output;
     }
+    output[0] = calcError;
+    for(int i = 0; i < p_cyc; ++i)
+      trainCycle;
+    output[1] = calcError;
+    return output;
+  }
 
-    if(!result) output.nullify;
-
+  public auto train(double p_thresh) {
+    Tuple!(double, long) output;
+    bool result;
+    if(!fSet) {
+      result = feedForward;
+      if(!result) return output;
+    }
+    output[0] = calcError;
+    auto cycle = 0;
+    auto start = MonoTime.currTime;
+    auto last = MonoTime.currTime;
+    while(calcError > p_thresh){
+      auto period = trainCycle;
+      ++cycle;
+      auto current = MonoTime.currTime;
+      auto diff = (current - last);
+      auto act = seconds(5);
+      if(diff > act) {
+        writeln(
+          "Training in Progress...",
+          " Start:", output[0],
+          " Current:", calcError,
+          " Target:", p_thresh,
+          " Cycle:", cycle,
+          " Time:",  current - start);
+        last = current;
+      }
+    }
+    output[1] = cycle;
     return output;
   }
 
   override string toString() {
+    const ulong LIMIT = 10;
     string output = "-----------------------------------\n";
     output ~= ("Inputs: " ~ to!string(m_inputs.length) ~ "\n");
     output ~= "Outputs: " ~ to!string(m_outputs.length) ~ "\n";
@@ -294,17 +340,40 @@ public:
     foreach(a; m_weights)
       output ~= to!string(a.length) ~ " ";
     output ~= "\n";
-    output ~= "Weight Values: " ~ to!string(m_weights) ~ "\n";
+    output ~= "Weight Values: (Limited to " ~ to!string(LIMIT) ~ ")\n";
+    foreach(x, a; m_weights) {
+      if(x > LIMIT) { output ~= "..."; break;}
+      output ~= "  [ ";
+      foreach(y, b; a) {
+        if(y > LIMIT) { output ~= "..."; break;}
+        output ~= to!string(b) ~ " ";
+      }
+      output ~= "]" ~ "\n";
+    }
     output ~= "Bias Values  : " ~ to!string(m_biases) ~ "\n";
-    output ~= "Input Values : " ~ to!string(m_inputs) ~ "\n";
+    output ~= "Input Values :\n";
+    output ~= "  [ ";
+    foreach(x, a; m_inputs)
+        output ~= to!string(a) ~ " ";
+    output ~= "]" ~ "\n";
     output ~= "Hidden Values: " ~ to!string(m_hiddens) ~ "\n";
     output ~= "Output Values: " ~ to!string(m_outputs) ~ "\n";
     output ~= "Target Values: " ~ to!string(m_targets) ~ "\n";
-    output ~= "Weight Deltas: " ~ to!string(m_weightDelta) ~ "\n";
+    output ~= "Weight Deltas: (Limited to " ~ to!string(LIMIT) ~ ")\n";
+    foreach(x, a; m_weightDelta) {
+      if(x > LIMIT) { output ~= "..."; break;}
+      output ~= "  [ ";
+      foreach(y, b; a) {
+        if(y > LIMIT) { output ~= "..."; break;}
+        output ~= to!string(b) ~ " ";
+      }
+      output ~= "]" ~ "\n";
+    }
     output ~= "Bias Deltas  : " ~ to!string(m_biasDelta) ~ "\n";
     output ~= "Current Error: " ~ to!string(calcError) ~ "\n";
     output ~= "Weights Set  : " ~ to!string(wSet) ~ "\n";
     output ~= "Inputs  Set  : " ~ to!string(iSet) ~ "\n";
+    output ~= "Target Set   : " ~ to!string(tSet) ~ "\n";
     output ~= "FedForward   : " ~ to!string(fSet) ~ "\n";
     output ~= "-----------------------------------";
    return output;

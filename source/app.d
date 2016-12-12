@@ -1,40 +1,39 @@
 import std.stdio;
 import core.time;
 import neuralnet;
+import parser;
 
-void main()
+void main(string[] args)
 {
-  NeuralNet net = new NeuralNet();
-  /* These weights will only work in a 2x2x2 config */
-  //if(!net.setWeights(
-  //  [ [0.15, 0.2, 0.25, 0.3], [0.4, 0.45, 0.5, 0.55]],
-  //  [0.35, 0.6])) {
-  //  writeln("Weights not accepted");
-  //  writeln(net);
-  //  return;
-  //}
-
+  writeln(args);
+  auto inputs = Digit.WIDTH * Digit.HEIGHT;
+  auto outputs = 5UL;
+  auto layers = [10UL];
+  NeuralNet net = new NeuralNet(inputs, outputs, layers);
   net.randWeights;
-  if(!net.setInput([0.05,0.10])) {
-    writeln("Input not accepted");
-    writeln(net);
-    return;
-  }
-  if(!net.setTargets([0.01, 0.99])) {
-     writeln("Targets not accepted");
-     writeln(net);
-     return;
-  }
 
-  writeln("Before:\n",net);
-  auto threshold = 0.000000001;
-  MonoTime start = MonoTime.currTime;
-  auto result = net.train(threshold);
-  MonoTime stop = MonoTime.currTime;
-  writeln("Threshold: ", threshold);
-  writeln("Cycles   : ", result);
-  writeln("Error    : ", net.calcError);
-  writeln("Completed in ", (stop - start));
-  writeln("After:\n", net);
+  string fName = "TrainingData.dat";
+  auto data = parseInput(fName);
+
+  ulong index = 0;
+  ulong target = 0;
+  foreach(i, a; data) {
+    if(a.m_value == target) {index = i; break;}
+  }
+  auto subject = data[index];
+  writeln(subject);
+  writeln(subject.test);
+
+  if(!net.setInputs(subject.toInput)) writeln("Did not accept inputs");
+  if(!net.setTargets(getTarget(subject.m_value, outputs)))
+    writeln("Did not accept Targets");
+  writeln("Initial Setup");
+  net.feedForward;
+  writeln(net);
+  auto cycles = 10000L;
+  for(int i = 0; i < cycles;++i) {
+    auto result = net.train(cycles);
+    writeln("After ", cycles, " cycles: ", result);
+    writeln(net.m_outputs);
+  }
 }
-
