@@ -28,7 +28,7 @@ class NeuralNet {
   private ulong   m_nInputs   = 2;
   private ulong   m_nOutputs  = 2;
   private ulong[] m_nLayers   = [2];
-  private double  m_learnRate = 0.1;
+  private double  m_learnRate = 0.05;
   private double  alpha       = 0.01;
 
   private const double[] WEIGHT_RANGE = [-0.1, 0.1];
