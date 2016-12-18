@@ -1,10 +1,29 @@
 module parser;
 
+/**
+  @brief Parser / Helper Module
+
+  Description: This module contains functions that custom tailors the data
+    for the example used in main.
+
+  */
+
+import core.time;
 import std.conv;
+import std.file;
+import std.json;
 import std.stdio;
 import std.string;
+import std.typecons: Tuple;
 
-/* IN-Parsing Struct */
+import neuralnet;
+
+/**
+  @brief  Digit Structure
+
+   Description: This structure is a model for the ascii digits
+
+  */
 struct Digit {
   static const ulong WIDTH = 8;
   static const ulong HEIGHT = 9;
@@ -46,6 +65,13 @@ struct Digit {
   }
 }
 
+/**
+  @brief Parses Input
+
+  Description: This function, given a file name will parse the given digits
+    into a usable data structure.
+
+  */
 Digit[] parseInput(string p_file) {
   Digit[] output;
 
@@ -62,6 +88,12 @@ Digit[] parseInput(string p_file) {
   return output;
 }
 
+/**
+  @brief Parse Single Digit
+
+  Description: This is the helper function to parseInput. It parses each digit
+    one at a time.
+  */
 Digit parseDigit(File p_file) {
 
   /* Setup */
@@ -128,3 +160,105 @@ Digit parseDigit(File p_file) {
   }
   return output;
 }
+
+/**
+  @brief Save/Load Weights
+
+  Description: Given a filename and/or flat array, these functions will save
+    or load it to the given file name so the weights of the net can be stored
+    and retrieved.
+  */
+double[] loadWeights(string p_name) {
+  double[] output;
+  if(exists(p_name)) {
+    File wFile;
+    wFile.open(p_name, "r");
+    if(wFile.isOpen) {
+      string wStr;
+      while(!wFile.eof()) wStr ~= wFile.readln();
+      wFile.close();
+      JSONValue wJSON = parseJSON(wStr);
+      if(wJSON.type != JSON_TYPE.ARRAY) return output;
+      for(int i = 0; i < wJSON.array.length; ++i) output ~= wJSON[i].floating;
+    }
+  }
+
+  return output;
+}
+void saveWeights(double[] p_wgts, string p_name) {
+  JSONValue jj = JSONValue(p_wgts);
+  auto file = new File("Weights.dat", "w");
+  file.rawWrite(jj.toString);
+  file.close;
+}
+
+/**
+  @brief Trainer Function
+
+  Description: Given a net, some digits to train and a precision to train to,
+    this function will train the neurtal net until no digit exceeds the given
+    threshold.
+  */
+void train(ref NeuralNet p_net, in Digit[] p_digs, in double p_prec) {
+  if(p_digs.length == 0) return; //Nothing to do
+  bool done = false;
+  auto start = MonoTime.currTime;
+  auto last = MonoTime.currTime;
+  immutable uint checks = 2;
+  uint round = 0;
+  while(!done)
+  {
+    Tuple!(double, long)[] results;
+
+    foreach(a; p_digs) {
+      if(!p_net.setInputs(a.getInput)) {
+        writeln("Inputs not accepted"); break;
+      }
+      if(!p_net.setTargets(a.getTarget(5))) {
+        writeln("Targets not accepted"); break;
+      }
+      p_net.feedForward;
+      if(p_net.calcError > p_prec) {
+        writefln("Training a %s ", a.m_value);
+        results ~= p_net.train(p_prec);
+        writefln(
+          "  - from %e to %e in %s epochs ",
+          results[$-1][0], p_prec, results[$-1][1]);
+      }
+    }
+
+    writefln("Round %s end, %s trains.", round++, results.length);
+    static uint checksPassed;
+    if(results.length == 0) checksPassed++;
+    else checksPassed = 0;
+    if(checksPassed >= checks) done = true;
+  }
+}
+
+/**
+  @brief Test Digits
+
+  Description: Given a net, a list of digits, and a precision, this function
+    will run through each and tally hits or misses, dictated by the threshold
+    given.
+  */
+Tuple!(uint, uint) testResults(
+  NeuralNet p_net,
+  in Digit[] p_in,
+  double p_prec) {
+  Tuple!(uint, uint) output;
+  uint hit, miss;
+  foreach(a; p_in) {
+    if(!p_net.setInputs(a.getInput)) {
+      writeln("Inputs not accepted"); break;
+    }
+    if(!p_net.setTargets(a.getTarget(5))) {
+      writeln("Targets not accepted"); break;
+    }
+    p_net.feedForward;
+    if(p_net.calcError > p_prec) output[1]++;
+    else output[0]++;
+  }
+  return output;
+}
+
