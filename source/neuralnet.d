@@ -1,5 +1,6 @@
 module neuralnet;
 
+import core.time;
 import std.algorithm;
 import std.conv;
 import std.exception: enforce;
@@ -8,7 +9,6 @@ import std.math;
 import std.numeric;
 import std.random;
 import std.typecons;
-import core.time;
 
 import std.stdio;
 
@@ -313,6 +313,18 @@ class NeuralNet {
   public ulong getOutputsLength() { return m_neurons[$-1].length; }
 
   /**
+    @ Get Outputs
+
+    Description: This function retrieves the output values after a feed forward
+      has been performed.
+    */
+  public double[] getOutputs() {
+    double[] output;
+    foreach(a; m_neurons[$-1]) output ~= a.value;
+    return output;
+  }
+
+  /**
     @brief Target Setter
 
     Description: This function will accept a flat array of size
@@ -336,7 +348,7 @@ class NeuralNet {
       set.
     */
   public bool feedForward() {
-    if(!wSet || !iSet || !tSet || fSet) return false;
+    if(!wSet || !iSet || fSet || !tSet) return false;
 
     foreach(ref a; m_neurons) foreach(ref b; a) b.fire();
 
