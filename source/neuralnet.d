@@ -1,7 +1,9 @@
-module neuralnet;
+module neuralnet2;
 
 import std.algorithm;
 import std.conv;
+import std.exception: enforce;
+import std.format;
 import std.math;
 import std.numeric;
 import std.random;
@@ -12,254 +14,254 @@ import std.stdio;
 
 class NeuralNet {
 
-  private double[][] m_layers;
-  private double[][] m_weights;
-  private double[][] m_weightDelta;
+  private struct Weight {
+    double weight = 0;
+    double deltaW = 0;
+    double deltaWOld = 0;
+    string weightNum = "-";
+    Neuron*[] lefts;
+    Neuron*[] rights;
 
-  private double[]   m_targets;
-  private double[]   m_biases;
-  private double[]   m_biasDelta;
+    void fire() {
+      enforce(lefts.length == 1 && rights.length == 1);
+      auto Ok = rights[0]; auto Oj = lefts[0];
+      deltaW = LEARN_RATE*Ok.getDelta*Oj.value;
+    }
+    void mergeDelta() {
+      weight += deltaW + MOMENTUM_ALPHA * deltaWOld;
+      deltaWOld = deltaW;
+      deltaW = 0;
+    }
 
-  private bool wSet = false;
-  private bool iSet = false;
-  private bool fSet = false;
-  private bool tSet = false;
+    string toString() {
+      return weightNum ~ ":" ~ format(fmt,weight);
+    }
+    string toStringF() {
+      return to!string(lefts.length) ~
+             "<(" ~ weightNum ~ ":" ~
+             to!string(weight) ~ ")>" ~
+             to!string(rights.length);
+    }
+  }
 
-  private uint   m_nInputs   = 2;
-  private uint   m_nOutputs  = 2;
-  private uint[] m_nLayers   = [2];
-  private double  m_learnRate = 0.05;
-  private double  alpha       = 0.01;
+  private struct Neuron {
+    bool bias = false;
+    double value = 0;
+    double target = 0;
+    double delta;
+    bool dSet;
+    string neuronNum = "+";
+    Weight*[] lefts;
+    Weight*[] rights;
 
-  private const double[] WEIGHT_RANGE = [-0.1, 0.1];
+    void fire() {
+      auto ll = lefts.length; auto rl = rights.length;
+      if((ll != 0 && rl != 0) || (ll != 0 && rl == 0))
+        value = 1/(1+E^^(-value));
+      if((ll == 0 && rl != 0) || (ll != 0 && rl != 0))
+        foreach(x, ref a; rights) foreach(y, ref b; a.rights)
+          b.value += (bias ? 1 : value) * a.weight;
+      dSet = false; delta = 0;
+    }
 
-  public @property auto m_inputs()
-    { assert(m_layers.length > 0); return m_layers[0]; }
-  private @property auto m_inputs(double[] p_in)
-    { return m_layers[0] = p_in.dup ;}
-  public @property auto m_outputs()
-    { assert(m_layers.length > 1); return m_layers[$-1]; }
-  private @property auto m_outputs(double[] p_in)
-    { assert(m_layers.length > 1); return m_layers[$-1] = p_in; }
-  public @property auto m_hiddens()
-    { assert(m_layers.length > 2); return m_layers[1..$-1]; }
-  private @property auto m_hiddens(double[][] p_in)
-    { assert(m_layers.length > 2); return m_layers[1..$-1] = p_in; }
+    double error() {
+      if(target == double.nan) return 0;
+      return (1.0/2.0) * (target-value)^^2;
+    }
+
+    double getDelta() {
+      if(bias) return 0.0;if(dSet) return delta;
+      delta = value*(1-value);
+      if(rights.length == 0)
+        delta = delta*(target-value);
+      else
+        delta =
+          delta*reduce!((a,b)=>a+b.weight*b.rights[0].getDelta)(0.0, rights);
+      dSet = true;
+      return delta;
+    }
+
+    string toString() {
+      return
+        neuronNum ~ ":" ~ ((bias) ? "bias" : format(fmt,value));
+    }
+    string toStringF() {
+      return to!string(lefts.length) ~
+             "<(" ~ neuronNum ~ ":" ~
+             ((bias) ? "bias" : to!string(value)) ~
+             ")>" ~
+             to!string(rights.length);
+    }
+  }
+
+  private Neuron[][] m_neurons;
+  private Weight[][] m_weights;
+
+  bool wSet = false;
+  bool iSet = false;
+  bool fSet = false;
+  bool tSet = false;
+
+  /* TODO a way to externally control these. */
+  private uint[] m_size = [2,2,2];
+  private static auto fmt = "%+.2g";
+  private static const double   MOMENTUM_ALPHA = 0.1;
+  private static const double   LEARN_RATE = 0.3;
+  private static const double[] WEIGHT_RANGE = [-1.0, 1.00];
 
   public this() { init; }
 
-  public this(uint p_in, uint p_out, uint[] p_nLayers) {
-    setSize(p_in, p_out, p_nLayers);
-    init;
+  public this(uint[] p_size) {
+    enforce(p_size.length > 2);
+    m_size = p_size.dup; init;
+  }
+
+  private void init() {
+
+    auto getXNeu = (uint pn, uint pi)
+      { return &m_neurons[pn][pi%(m_neurons[pn].length-1)]; };
+    auto getYNeu = (uint pn, uint pi)
+      { return &m_neurons[pn+1][pi/(m_neurons[pn].length-1)]; };
+
+    /* size */
+    m_neurons.length = 0;
+    m_neurons.length = m_size.length;
+    foreach(i, ref a; m_neurons)
+      a.length = (i != m_neurons.length-1) ? m_size[i]+1 : m_size[i];
+    m_weights.length = 0;
+    m_weights.length = m_size.length-1;
+    foreach(i, ref a; m_weights)
+      a.length = m_size[i] * m_size[i+1] +1;
+
+    /* link up normal neurons */
+    foreach(n, ref a; m_weights)
+      foreach(i, ref b; a[0..$-1]) {
+        auto lXN = getXNeu(n,i);
+        auto rYN = getYNeu(n,i);
+          b.lefts ~= lXN;
+          b.rights ~= rYN;
+          lXN.rights ~= &b;
+          rYN.lefts ~= &b;
+        }
+
+    /* Link up Biases */
+    foreach(n, ref a; m_weights) {
+      auto wgt = &a[$-1];
+      auto lNeu = &m_neurons[n][$-1];
+      wgt.lefts ~= lNeu;
+      lNeu.rights ~= wgt;
+      foreach(ref b; m_neurons[n+1][0..$-1]) {
+        wgt.rights ~= &b;
+        b.lefts ~= wgt;
+      }
+    }
+    m_weights[$-1][$-1].rights ~= &m_neurons[$-1][$-1];
+    m_neurons[$-1][$-1].lefts ~= &m_weights[$-1][$-1];
+
+    /* Set bias on left neuron */
+    foreach(a; m_neurons[0..$-1]) a[$-1].bias = true;
+
+    /* Set Neuron/Weight numbers */
+    uint count = 0;
+    foreach(x, ref a; m_neurons) foreach(y, ref b; a) {
+      if(b.bias) b.neuronNum = "b" ~ to!string(x);
+      else b.neuronNum = "n" ~ to!string(count++);
+    }
+    count = 0;
+    foreach(x, ref a; m_weights) foreach(y, ref b; a)
+      b.weightNum = "w" ~ to!string(count++);
+
+    reset;
+  }
+
+  public auto calcError() {
+    FPTemporary!double totalError = 0.0; // Init TE
+    if(!fSet) return totalError;
+    foreach(a; m_neurons[$-1]) totalError += a.error;
+    return totalError;
   }
 
   public void randWeights() {
     Random gen;
     foreach(ref a; m_weights)
       foreach(ref b; a)
-        b = uniform(WEIGHT_RANGE[0], WEIGHT_RANGE[1], gen);
-    m_biases.length = m_weights.length;
-    foreach(ref a; m_biases)
-      a = uniform(WEIGHT_RANGE[0], WEIGHT_RANGE[1], gen);
-    initDeltas;
+        b.weight = uniform(WEIGHT_RANGE[0], WEIGHT_RANGE[1], gen);
     wSet = true;
-  }
-
-  private void initDeltas(){
-    foreach(ref a; m_weightDelta)
-      foreach(ref b; a) b = 0.0;
-    foreach(ref a; m_biasDelta) a = 0.0;
-  }
-
-  private void init() {
-    m_layers.length = 0;
-    m_layers.length++;
-    m_layers[$-1].length = m_nInputs;
-    foreach(a; m_nLayers) {
-      m_layers.length++;
-      m_layers[$-1].length = a;
-    }
-    m_layers.length++;
-    m_layers[$-1].length = m_nOutputs;
-
-    m_weights.length = 0;
-    m_weights.length = 1 + m_nLayers.length;
-    m_weightDelta.length = 1 + m_nLayers.length;
-    foreach(i, ref a; m_weights) {
-      a.length = m_layers[i].length * m_layers[i+1].length;
-      m_weightDelta[i].length = m_layers[i].length * m_layers[i+1].length;
-    }
-
-    m_biases.length = 0;
-    m_biases.length = m_weights.length;
-    m_biasDelta.length = 0;
-    m_biasDelta.length = m_weights.length;
-    wSet = iSet = fSet = tSet = false;
   }
 
   private void reset(){
     fSet = false;
-    foreach(ref a; m_layers[1..$]) foreach(ref b; a) b = double.nan;
-    initDeltas;
-  }
-
-  public void setSize(uint p_in, uint p_out, uint[] p_nLayers) {
-    m_nInputs = p_in;
-    m_nOutputs = p_out;
-    m_nLayers = p_nLayers.dup;
-    init;
+    foreach(ref a; m_neurons[1..$])
+      foreach(ref b; a)
+        b.value = 0;
   }
 
   public bool setInputs(in double[] p_in) {
-    if(m_inputs.length != p_in.length) return false;
+    if(p_in.length != m_size[0]) return false;
     reset;
-    m_inputs = p_in.dup;
+    foreach(i, ref a; m_neurons[0][0..$-1])
+      a.value = p_in[i];
     iSet = true;
     return true;
   }
 
-  public bool setWeights(double[][] p_weights,double[] p_bWeights) {
-    /* Verify Input */
-    if(p_weights.length != m_weights.length) return false;
-    if(p_bWeights.length != m_weights.length) return false;
-    foreach(i, a; m_weights)
-      if(a.length != p_weights[i].length) return false;
-    reset;
-    m_weights = p_weights.dup;
-    m_biases = p_bWeights.dup;
-    initDeltas;
-    wSet = true;
-    return true;
-  }
-
   public bool setTargets(double[] p_in) {
-    if(p_in.length != m_nOutputs) return false;
+    if(p_in.length != m_size[$-1]) return false;
     reset;
-    m_targets = p_in.dup;
+    foreach(i, ref a; m_neurons[$-1])
+      a.target = p_in[i];
     tSet = true;
     return true;
   }
 
+  public bool setWeights(double[] p_in) {
+    uint total = 0;
+    foreach(n,a; m_size[0..$-1]) total += m_size[n] * m_size[n+1] +1;
+    if(p_in.length != total) return false;
+    total = 0;
+    foreach(y, ref a; m_weights) foreach(x, ref b; a) b.weight = p_in[total++];
+    wSet = true;
+    return true;
+  }
+
+  public double[] getWeights() {
+    double[] output;
+    foreach(a; m_weights) {
+      foreach(b; a) output ~= b.weight;
+    }
+    return output;
+  }
+
+  public uint getWeightsLength() {
+    uint total = 0;
+    foreach(n,a; m_size[0..$-1]) total += m_size[n] * m_size[n+1] +1;
+    return total;
+  }
+
+  public void clearWeights() {
+    foreach(ref a; m_weights) foreach(ref b; a) b.weight = 0.0;
+  }
+
   public bool feedForward() {
     if(!wSet || !iSet || !tSet || fSet) return false;
-
-    /* Sigmoid Lambda */
-    auto sigmoid = (double pa) => 1/(1+E^^(-pa));
-    auto wi = (uint pz, uint px, uint py) => py*m_layers[pz].length+px;
-
-    /* Cycle Through each layer n+1 */
-    foreach(n, ref a; m_layers[1..$])
-      foreach(y, ref b; a) { /* y/y b node with each c node */
-        b = 0.0;
-        foreach(x, c; m_layers[n])
-          b += c*m_weights[n][wi(n, x, y)];
-        b+= m_biases[n];
-        b = sigmoid(b);
-      }
-
+    foreach(ref a; m_neurons) foreach(ref b; a) b.fire();
     fSet = true;
     return true;
   }
 
-  public auto calcError() {
-    FPTemporary!double totalError = 0.0; // Init TE
-    if(!fSet) return totalError;
-    foreach(i, a; m_outputs) totalError += (1.0/2.0) * (m_targets[i]-a)^^2;
-    return totalError;
-  }
-
   public bool backProp() {
     if(!fSet) return false;
+
+    /* Generate Weight Deltas */
+    foreach_reverse(n, ref a; m_weights)
+      foreach(y, ref b; a[0..$-1])
+        b.fire();
+
+    /* Apply Weight Deltas to Weights */
+    foreach(ref a; m_weights) foreach(ref b; a) b.mergeDelta;
+
+    reset; fSet = false;
     return true;
-    //FPTemporary!double[][] weightDelta;
-    //weightDelta.length = m_weights.length;
-    //foreach(i, a; m_weights)
-    //  weightDelta[i].length = a.length;
-    //FPTemporary!double[] biasDelta;
-    //biasDelta.length = m_biases.length;
-    //FPTemporary!double[] deltaNew;
-    //FPTemporary!double[] deltaOld;
-    //FPTemporary!double biasOld;
-
-    /* Index Finders */
-    //auto OKayI = (uint pn, uint px) => px/m_layers[pn].length;
-    //auto OJayI = (uint pn, uint px) => px%m_layers[pn].length;
-
-//    /* Object Finders */
-//    auto OKay = (uint pn, uint px)
-//      { return m_layers[pn+1][OKayI(pn,px)]; };
-//    auto OJay = (uint pn, uint px)
-//      { return m_layers[pn][OJayI(pn,px)]; };
-//    auto Target = (uint pn, uint px)
-//      { return m_targets[OKayI(pn,px)]; };
-//    auto oldDelta = (uint pn, uint px)
-//      { return deltaOld[OKayI(pn, px)]; };
-
-//    /* Formulas */
-//    auto deltak = (double ok, double tgt)
-//      { return ok*(1-ok)*(tgt-ok); };
-//    auto deltaj = (double ok, double wSum, double old)
-//      { return ok*(1-ok)*wSum*old; };
-//    auto DeltaK = (uint pn, uint px)
-//      { return deltak(OKay(pn,px), Target(pn,px)); };
-//    auto DeltaJ = (uint pn, uint px)
-//      { return deltaj(OKay(pn,px), sum(m_weights[pn+1]), oldDelta(pn, px)); };
-
-//    auto DeltaW = (uint pn, uint px, double function(uint, uint) delta)
-//      { return m_learnRate*delta(pn,px)*OJay(pn,px); };
-
-//    /* Avgs */
-//    auto AvgDeltaK = (uint pn) {
-//      FPTemporary!double[] deltas;
-//      foreach(i, o; m_layers[pn+1]) deltas ~= deltak(o, m_targets[i]);
-//      return sum(deltas)/deltas.length;
-//    };
-//    auto AvgDeltaJ = (uint pn) {
-//      FPTemporary!double[] deltas;
-//      foreach(i, o; m_layers[pn+1])
-//        deltas ~= deltaj(o, sum(m_weights[pn+1]), biasOld);
-//      return sum(deltas)/deltas.length;
-//    };
-
-//    /* Bias Function */
-//    auto DeltaBias = (uint pn, double function(uint) avg)
-//      { return m_learnRate*avg(pn)*1.0; };
-
-//    /* Process the Layers */
-//    foreach_reverse(n, a; m_weights){
-//      if(n == m_weights.length-1) {/* jk iteration */
-//        foreach(x, b; a) {
-//          weightDelta[n][x] = DeltaW(n,x, DeltaK);
-//          deltaOld ~= DeltaK(n,x);
-//        }
-//        /* Do the same for the biases */
-//        biasDelta[n] = DeltaBias(n, AvgDeltaK);
-//        biasOld = AvgDeltaK(n);
-//      } else { /* ij iterations */
-//        foreach(x, b; a) {
-//          weightDelta[n][x] = DeltaW(n,x, DeltaJ);
-//          deltaNew ~= DeltaJ(n,x);
-//        }
-//        /* Do the same for the biases */
-//        biasDelta[n] = DeltaBias(n, AvgDeltaJ);
-//        biasOld = AvgDeltaJ(n);
-//        /* End of cycle maintenance */
-//        deltaOld = deltaNew.dup;
-//        deltaNew.length = 0;
-//      }
-//    }
-
-//    /* Apply deltas *//* Apply Momentum */
-//    foreach(y, ref a; m_weights) foreach(x, ref b; a)
-//      b += weightDelta[y][x] + alpha * m_weightDelta[y][x];
-
-//    foreach(y, ref a; m_biases)
-//      a += biasDelta[y] + alpha * m_biasDelta[y];
-
- //   m_weightDelta = weightDelta.dup;
- //   m_biasDelta = biasDelta.dup;
- //   return true;
- //   fSet = false;
   }
 
   public auto trainCycle() {
@@ -327,19 +329,44 @@ class NeuralNet {
   override string toString() {
     const ulong LIMIT = 10;
     string output = "-----------------------------------\n";
-    output ~= ("Inputs: " ~ to!string(m_inputs.length) ~ "\n");
-    output ~= "Outputs: " ~ to!string(m_outputs.length) ~ "\n";
-    output ~= "Hidden Layers: " ~ to!string(m_hiddens.length) ~ "\n";
-    output ~= "Hidden Layer Lengths: ";
-    foreach(a; m_hiddens)
-      output ~= to!string(a.length) ~ " ";
-    output ~= "\n";
-    output ~= "Ttl Layers: " ~ to!string(m_layers.length) ~ "\n";
-    output ~= "Weight Layers: " ~ to!string(m_weights.length) ~ "\n";
-    output ~= "Weight Lengths: ";
+    output ~= "Inputs/Outputs/Hiddens/Outputs: ";
+    output ~= to!string(m_size[0]) ~ "/"
+            ~ to!string(m_size[1..$-1]) ~ "/"
+            ~ to!string(m_size[$-1]) ~ " ";
+    ulong[] leng;
+    foreach(a; m_neurons)
+      leng ~= a.length;
+    output ~= "Actual Layer Lengths: " ~ to!string(leng) ~ "\n";
+
+    output ~= "Input Values : (Limited to " ~ to!string(LIMIT) ~ ")\n";
+    output ~= "  [ ";
+    foreach(x, a; m_neurons[0]) {
+      if(x > LIMIT) { output ~= "..."; break;}
+      output ~= to!string(a) ~ " ";
+    }
+    output ~= "]" ~ "\n";
+
+    output ~= "Hidden Values : (Limited to " ~ to!string(LIMIT) ~ ")\n";
+    foreach(x, a; m_neurons[1..$-1]) {
+      if(x > LIMIT) { output ~= "..."; break;}
+      output ~= "  [ ";
+      foreach(y, b; a) {
+        if(y > LIMIT) { output ~= "..."; break;}
+        output ~= to!string(b) ~ " ";
+      }
+      output ~= "]" ~ "\n";
+    }
+
+    output ~= "Output Values :\n";
+    output ~= "  [ ";
+    foreach(x, a; m_neurons[$-1])
+      output ~= to!string(a) ~ " ";
+    output ~= "]" ~ "\n";
+
+    leng.length = 0;
     foreach(a; m_weights)
-      output ~= to!string(a.length) ~ " ";
-    output ~= "\n";
+      leng ~= a.length;
+    output ~= "Weight Layers: " ~ to!string(leng) ~ "\n";
     output ~= "Weight Values: (Limited to " ~ to!string(LIMIT) ~ ")\n";
     foreach(x, a; m_weights) {
       if(x > LIMIT) { output ~= "..."; break;}
@@ -350,31 +377,17 @@ class NeuralNet {
       }
       output ~= "]" ~ "\n";
     }
-    output ~= "Bias Values  : " ~ to!string(m_biases) ~ "\n";
-    output ~= "Input Values :\n";
-    output ~= "  [ ";
-    foreach(x, a; m_inputs)
-        output ~= to!string(a) ~ " ";
+
+    output ~= "Target Values: [ ";
+    foreach(a; m_neurons[$-1])
+      output ~= to!string(a.target) ~ " ";
     output ~= "]" ~ "\n";
-    output ~= "Hidden Values: " ~ to!string(m_hiddens) ~ "\n";
-    output ~= "Output Values: " ~ to!string(m_outputs) ~ "\n";
-    output ~= "Target Values: " ~ to!string(m_targets) ~ "\n";
-    output ~= "Weight Deltas: (Limited to " ~ to!string(LIMIT) ~ ")\n";
-    foreach(x, a; m_weightDelta) {
-      if(x > LIMIT) { output ~= "..."; break;}
-      output ~= "  [ ";
-      foreach(y, b; a) {
-        if(y > LIMIT) { output ~= "..."; break;}
-        output ~= to!string(b) ~ " ";
-      }
-      output ~= "]" ~ "\n";
-    }
-    output ~= "Bias Deltas  : " ~ to!string(m_biasDelta) ~ "\n";
+
     output ~= "Current Error: " ~ to!string(calcError) ~ "\n";
     output ~= "Weights Set  : " ~ to!string(wSet) ~ "\n";
     output ~= "Inputs  Set  : " ~ to!string(iSet) ~ "\n";
-    output ~= "Target Set   : " ~ to!string(tSet) ~ "\n";
     output ~= "FedForward   : " ~ to!string(fSet) ~ "\n";
+    output ~= "Target Set   : " ~ to!string(tSet) ~ "\n";
     output ~= "-----------------------------------";
    return output;
   }
