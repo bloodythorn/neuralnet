@@ -130,7 +130,6 @@ class NeuralNet {
 
   public this(uint[] p_size) {
     enforce(p_size.length > 2);
-    enforce(reduce!((a,b)=> a && (b > 1))(true, p_size));
     m_size = p_size.dup; init;
   }
 
