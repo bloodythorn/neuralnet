@@ -8,26 +8,40 @@ import std.string;
 struct Digit {
   static const ulong WIDTH = 8;
   static const ulong HEIGHT = 9;
-  bool[HEIGHT][WIDTH] m_rep;
+  bool[WIDTH][HEIGHT] m_rep;
   ulong m_value = 0;
-  double[] toInput(){
+  string toString() {
+      string output = to!string(m_value) ~ "|";
+      foreach(a; m_rep[0])
+        if(a) output ~= "1";
+        else output ~= "0";
+      output ~= "|\n";
+      foreach(a; m_rep[1..$]) {
+        output ~= " |";
+        foreach(b; a)
+          if(b) output ~= "1";
+          else output ~= "0";
+        output ~= "|\n";
+      }
+      return output;
+  }
+  bool test() {
+    bool output = false;
+    foreach(a; m_rep) foreach(b; a) output |= b;
+    return output;
+  }
+  const double[] getInput() {
     double[] output;
     foreach(a; m_rep) foreach(b; a)
       if(b) output ~= 0.99;
       else output ~= 0.01;
     return output;
   }
-  string toString() {
-      string output;
-      output ~= to!string(m_value) ~ "\n";
-      foreach(a; m_rep)
-        output ~= to!string(a) ~ "\n";
-      output = output[0..$-1];
-      return output;
-  }
-  bool test() {
-    bool output = false;
-    foreach(a; m_rep) foreach(b; a) output |= b;
+  const double[] getTarget(uint p_size) {
+    double[] output;
+    for(uint i = 0; i < p_size;++i)
+      if(i == m_value) output ~= 0.99;
+      else output ~= 0.01;
     return output;
   }
 }
@@ -53,8 +67,8 @@ Digit parseDigit(File p_file) {
   /* Setup */
   Digit output;
   string line;
-  ulong row = 0;
-  ulong col= 0;
+  uint row = 0;
+  uint col= 0;
   /* Iterate through each line */
   while (!p_file.eof) {
     line = strip(p_file.readln);
@@ -63,11 +77,11 @@ Digit parseDigit(File p_file) {
         while (line.length != 0) {
           switch (line[0]) {
             case '0': {
-              output.m_rep[col++][row] = false;
+              output.m_rep[row][col++] = false;
               break;
             }
             case '1': {
-              output.m_rep[col++][row] = true;
+              output.m_rep[row][col++] = true;
               break;
             }
             default: {
@@ -112,13 +126,5 @@ Digit parseDigit(File p_file) {
     output = Digit();
     return output;
   }
-  return output;
-}
-
-double[] getTarget(ulong p_digit, ulong p_size) {
-  double[] output;
-  for(uint i = 0; i < p_size;++i)
-    if(i == p_digit) output ~= 0.99;
-    else output ~= 0.01;
   return output;
 }

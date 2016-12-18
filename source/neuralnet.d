@@ -25,9 +25,9 @@ class NeuralNet {
   private bool fSet = false;
   private bool tSet = false;
 
-  private ulong   m_nInputs   = 2;
-  private ulong   m_nOutputs  = 2;
-  private ulong[] m_nLayers   = [2];
+  private uint   m_nInputs   = 2;
+  private uint   m_nOutputs  = 2;
+  private uint[] m_nLayers   = [2];
   private double  m_learnRate = 0.05;
   private double  alpha       = 0.01;
 
@@ -48,7 +48,7 @@ class NeuralNet {
 
   public this() { init; }
 
-  public this(ulong p_in, ulong p_out, ulong[] p_nLayers) {
+  public this(uint p_in, uint p_out, uint[] p_nLayers) {
     setSize(p_in, p_out, p_nLayers);
     init;
   }
@@ -103,7 +103,7 @@ class NeuralNet {
     initDeltas;
   }
 
-  public void setSize(ulong p_in, ulong p_out, ulong[] p_nLayers) {
+  public void setSize(uint p_in, uint p_out, uint[] p_nLayers) {
     m_nInputs = p_in;
     m_nOutputs = p_out;
     m_nLayers = p_nLayers.dup;
@@ -145,7 +145,7 @@ class NeuralNet {
 
     /* Sigmoid Lambda */
     auto sigmoid = (double pa) => 1/(1+E^^(-pa));
-    auto wi = (long pz, long px, long py) => py*m_layers[pz].length+px;
+    auto wi = (uint pz, uint px, uint py) => py*m_layers[pz].length+px;
 
     /* Cycle Through each layer n+1 */
     foreach(n, ref a; m_layers[1..$])
@@ -170,96 +170,96 @@ class NeuralNet {
 
   public bool backProp() {
     if(!fSet) return false;
-
-    FPTemporary!double[][] weightDelta;
-    weightDelta.length = m_weights.length;
-    foreach(i, a; m_weights)
-      weightDelta[i].length = a.length;
-    FPTemporary!double[] biasDelta;
-    biasDelta.length = m_biases.length;
-    FPTemporary!double[] deltaNew;
-    FPTemporary!double[] deltaOld;
-    FPTemporary!double biasOld;
+    return true;
+    //FPTemporary!double[][] weightDelta;
+    //weightDelta.length = m_weights.length;
+    //foreach(i, a; m_weights)
+    //  weightDelta[i].length = a.length;
+    //FPTemporary!double[] biasDelta;
+    //biasDelta.length = m_biases.length;
+    //FPTemporary!double[] deltaNew;
+    //FPTemporary!double[] deltaOld;
+    //FPTemporary!double biasOld;
 
     /* Index Finders */
-    auto OKayI = (ulong pn, ulong px) => px/m_layers[pn].length;
-    auto OJayI = (ulong pn, ulong px) => px%m_layers[pn].length;
+    //auto OKayI = (uint pn, uint px) => px/m_layers[pn].length;
+    //auto OJayI = (uint pn, uint px) => px%m_layers[pn].length;
 
-    /* Object Finders */
-    auto OKay = (ulong pn, ulong px)
-      { return m_layers[pn+1][OKayI(pn,px)]; };
-    auto OJay = (ulong pn, ulong px)
-      { return m_layers[pn][OJayI(pn,px)]; };
-    auto Target = (ulong pn, ulong px)
-      { return m_targets[OKayI(pn,px)]; };
-    auto oldDelta = (ulong pn, ulong px)
-      { return deltaOld[OKayI(pn, px)]; };
+//    /* Object Finders */
+//    auto OKay = (uint pn, uint px)
+//      { return m_layers[pn+1][OKayI(pn,px)]; };
+//    auto OJay = (uint pn, uint px)
+//      { return m_layers[pn][OJayI(pn,px)]; };
+//    auto Target = (uint pn, uint px)
+//      { return m_targets[OKayI(pn,px)]; };
+//    auto oldDelta = (uint pn, uint px)
+//      { return deltaOld[OKayI(pn, px)]; };
 
-    /* Formulas */
-    auto deltak = (double ok, double tgt)
-      { return ok*(1-ok)*(tgt-ok); };
-    auto deltaj = (double ok, double wSum, double old)
-      { return ok*(1-ok)*wSum*old; };
-    auto DeltaK = (ulong pn, ulong px)
-      { return deltak(OKay(pn,px), Target(pn,px)); };
-    auto DeltaJ = (ulong pn, ulong px)
-      { return deltaj(OKay(pn,px), sum(m_weights[pn+1]), oldDelta(pn, px)); };
+//    /* Formulas */
+//    auto deltak = (double ok, double tgt)
+//      { return ok*(1-ok)*(tgt-ok); };
+//    auto deltaj = (double ok, double wSum, double old)
+//      { return ok*(1-ok)*wSum*old; };
+//    auto DeltaK = (uint pn, uint px)
+//      { return deltak(OKay(pn,px), Target(pn,px)); };
+//    auto DeltaJ = (uint pn, uint px)
+//      { return deltaj(OKay(pn,px), sum(m_weights[pn+1]), oldDelta(pn, px)); };
 
-    auto DeltaW = (ulong pn, ulong px, double delegate(ulong, ulong) delta)
-      { return m_learnRate*delta(pn,px)*OJay(pn,px); };
+//    auto DeltaW = (uint pn, uint px, double function(uint, uint) delta)
+//      { return m_learnRate*delta(pn,px)*OJay(pn,px); };
 
-    /* Avgs */
-    auto AvgDeltaK = (ulong pn) {
-      FPTemporary!double[] deltas;
-      foreach(i, o; m_layers[pn+1]) deltas ~= deltak(o, m_targets[i]);
-      return sum(deltas)/deltas.length;
-    };
-    auto AvgDeltaJ = (ulong pn) {
-      FPTemporary!double[] deltas;
-      foreach(i, o; m_layers[pn+1])
-        deltas ~= deltaj(o, sum(m_weights[pn+1]), biasOld);
-      return sum(deltas)/deltas.length;
-    };
+//    /* Avgs */
+//    auto AvgDeltaK = (uint pn) {
+//      FPTemporary!double[] deltas;
+//      foreach(i, o; m_layers[pn+1]) deltas ~= deltak(o, m_targets[i]);
+//      return sum(deltas)/deltas.length;
+//    };
+//    auto AvgDeltaJ = (uint pn) {
+//      FPTemporary!double[] deltas;
+//      foreach(i, o; m_layers[pn+1])
+//        deltas ~= deltaj(o, sum(m_weights[pn+1]), biasOld);
+//      return sum(deltas)/deltas.length;
+//    };
 
-    /* Bias Function */
-    auto DeltaBias = (ulong pn, double delegate(ulong) avg)
-      { return m_learnRate*avg(pn)*1.0; };
+//    /* Bias Function */
+//    auto DeltaBias = (uint pn, double function(uint) avg)
+//      { return m_learnRate*avg(pn)*1.0; };
 
-    /* Process the Layers */
-    foreach_reverse(n, a; m_weights){
-      if(n == m_weights.length-1) {/* jk iteration */
-        foreach(x, b; a) {
-          weightDelta[n][x] = DeltaW(n,x, DeltaK);
-          deltaOld ~= DeltaK(n,x);
-        }
-        /* Do the same for the biases */
-        biasDelta[n] = DeltaBias(n, AvgDeltaK);
-        biasOld = AvgDeltaK(n);
-      } else { /* ij iterations */
-        foreach(x, b; a) {
-          weightDelta[n][x] = DeltaW(n,x, DeltaJ);
-          deltaNew ~= DeltaJ(n,x);
-        }
-        /* Do the same for the biases */
-        biasDelta[n] = DeltaBias(n, AvgDeltaJ);
-        biasOld = AvgDeltaJ(n);
-        /* End of cycle maintenance */
-        deltaOld = deltaNew.dup;
-        deltaNew.length = 0;
-      }
-    }
+//    /* Process the Layers */
+//    foreach_reverse(n, a; m_weights){
+//      if(n == m_weights.length-1) {/* jk iteration */
+//        foreach(x, b; a) {
+//          weightDelta[n][x] = DeltaW(n,x, DeltaK);
+//          deltaOld ~= DeltaK(n,x);
+//        }
+//        /* Do the same for the biases */
+//        biasDelta[n] = DeltaBias(n, AvgDeltaK);
+//        biasOld = AvgDeltaK(n);
+//      } else { /* ij iterations */
+//        foreach(x, b; a) {
+//          weightDelta[n][x] = DeltaW(n,x, DeltaJ);
+//          deltaNew ~= DeltaJ(n,x);
+//        }
+//        /* Do the same for the biases */
+//        biasDelta[n] = DeltaBias(n, AvgDeltaJ);
+//        biasOld = AvgDeltaJ(n);
+//        /* End of cycle maintenance */
+//        deltaOld = deltaNew.dup;
+//        deltaNew.length = 0;
+//      }
+//    }
 
-    /* Apply deltas *//* Apply Momentum */
-    foreach(y, ref a; m_weights) foreach(x, ref b; a)
-      b += weightDelta[y][x] + alpha * m_weightDelta[y][x];
+//    /* Apply deltas *//* Apply Momentum */
+//    foreach(y, ref a; m_weights) foreach(x, ref b; a)
+//      b += weightDelta[y][x] + alpha * m_weightDelta[y][x];
 
-    foreach(y, ref a; m_biases)
-      a += biasDelta[y] + alpha * m_biasDelta[y];
+//    foreach(y, ref a; m_biases)
+//      a += biasDelta[y] + alpha * m_biasDelta[y];
 
-    m_weightDelta = weightDelta.dup;
-    m_biasDelta = biasDelta.dup;
-    fSet = false;
-    return true;
+ //   m_weightDelta = weightDelta.dup;
+ //   m_biasDelta = biasDelta.dup;
+ //   return true;
+ //   fSet = false;
   }
 
   public auto trainCycle() {

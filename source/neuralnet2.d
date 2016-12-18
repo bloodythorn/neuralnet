@@ -3,6 +3,7 @@ module neuralnet2;
 import std.algorithm;
 import std.conv;
 import std.exception: enforce;
+import std.format;
 import std.math;
 import std.numeric;
 import std.random;
@@ -11,103 +12,172 @@ import core.time;
 
 import std.stdio;
 
-struct Weight {
-  double weight = 0;
-  double delta = 0;
-  Neuron*[] lefts;
-  Neuron*[] rights;
-  string toString() { return to!string(weight); }
-  string toStringF() {
-    return to!string(lefts.length) ~
-           "<(" ~ to!string(weight) ~ ")>" ~
-           to!string(rights.length);
-  }
-}
-
-struct Neuron {
-  bool bias = false;
-  double value = 0;
-  double target = 0;
-  Weight*[] lefts;
-  Weight*[] rights;
-  string toString() { return ((bias) ? "bias" : to!string(value)); }
-  string toStringF() {
-    return to!string(lefts.length) ~
-           "<(" ~ ((bias) ? "bias" : to!string(value)) ~
-           ")>" ~
-           to!string(rights.length);
-  }
-}
-
 class NeuralNet {
 
-  Neuron[][] m_neurons;
-  Weight[][] m_weights;
+  private struct Weight {
+    double weight = 0;
+    double deltaW = 0;
+    double deltaWOld = 0;
+    string weightNum = "-";
+    Neuron*[] lefts;
+    Neuron*[] rights;
+
+    void fire() {
+      enforce(lefts.length == 1 && rights.length == 1);
+      auto Ok = rights[0]; auto Oj = lefts[0];
+      deltaW = LEARN_RATE*Ok.getDelta*Oj.value;
+    }
+    void mergeDelta() {
+      weight += deltaW + MOMENTUM_ALPHA * deltaWOld;
+      deltaWOld = deltaW;
+      deltaW = 0;
+    }
+
+    string toString() {
+      return weightNum ~ ":" ~ format(fmt,weight);
+    }
+    string toStringF() {
+      return to!string(lefts.length) ~
+             "<(" ~ weightNum ~ ":" ~
+             to!string(weight) ~ ")>" ~
+             to!string(rights.length);
+    }
+  }
+
+  private struct Neuron {
+    bool bias = false;
+    double value = 0;
+    double target = 0;
+    double delta;
+    bool dSet;
+    string neuronNum = "+";
+    Weight*[] lefts;
+    Weight*[] rights;
+
+    void fire() {
+      auto ll = lefts.length; auto rl = rights.length;
+      if((ll != 0 && rl != 0) || (ll != 0 && rl == 0))
+        value = 1/(1+E^^(-value));
+      if((ll == 0 && rl != 0) || (ll != 0 && rl != 0))
+        foreach(x, ref a; rights) foreach(y, ref b; a.rights)
+          b.value += (bias ? 1 : value) * a.weight;
+      dSet = false; delta = 0;
+    }
+
+    double error() {
+      if(target == double.nan) return 0;
+      return (1.0/2.0) * (target-value)^^2;
+    }
+
+    double getDelta() {
+      if(bias) return 0.0;if(dSet) return delta;
+      delta = value*(1-value);
+      if(rights.length == 0)
+        delta = delta*(target-value);
+      else
+        delta =
+          delta*reduce!((a,b)=>a+b.weight*b.rights[0].getDelta)(0.0, rights);
+      dSet = true;
+      return delta;
+    }
+
+    string toString() {
+      return
+        neuronNum ~ ":" ~ ((bias) ? "bias" : format(fmt,value));
+    }
+    string toStringF() {
+      return to!string(lefts.length) ~
+             "<(" ~ neuronNum ~ ":" ~
+             ((bias) ? "bias" : to!string(value)) ~
+             ")>" ~
+             to!string(rights.length);
+    }
+  }
+
+  private Neuron[][] m_neurons;
+  private Weight[][] m_weights;
 
   bool wSet = false;
   bool iSet = false;
   bool fSet = false;
   bool tSet = false;
 
-  private ulong[] m_size = [2,2,2];
-
-  private const double   LEARN_RATE = 0.05;//0.3
-  private const double   LEARN_ALPHA = 0.3;
-  private const double[] WEIGHT_RANGE = [-0.05, 0.05];
+  /* TODO a way to externally control these. */
+  private uint[] m_size = [2,2,2];
+  private static auto fmt = "%+.2g";
+  private static const double   MOMENTUM_ALPHA = 0.1;
+  private static const double   LEARN_RATE = 0.3;
+  private static const double[] WEIGHT_RANGE = [-1.0, 1.00];
 
   public this() { init; }
 
-  public this(ulong[] p_size) {
+  public this(uint[] p_size) {
     enforce(p_size.length > 2);
     m_size = p_size.dup; init;
   }
 
   private void init() {
 
-    auto getXNeu = (long pn, long pi)
+    auto getXNeu = (uint pn, uint pi)
       { return &m_neurons[pn][pi%(m_neurons[pn].length-1)]; };
-    auto getYNeu = (long pn, long pi)
+    auto getYNeu = (uint pn, uint pi)
       { return &m_neurons[pn+1][pi/(m_neurons[pn].length-1)]; };
 
     /* size */
+    m_neurons.length = 0;
     m_neurons.length = m_size.length;
     foreach(i, ref a; m_neurons)
       a.length = (i != m_neurons.length-1) ? m_size[i]+1 : m_size[i];
+    m_weights.length = 0;
     m_weights.length = m_size.length-1;
     foreach(i, ref a; m_weights)
       a.length = m_size[i] * m_size[i+1] +1;
 
     /* link up normal neurons */
     foreach(n, ref a; m_weights)
-      foreach(i, ref b; a)
-        if(i != a.length-1) {
-          b.lefts ~= getXNeu(n,i);
-          getXNeu(n,i).rights ~= &b;
-          b.rights ~= getYNeu(n,i);
-          getYNeu(n,i).lefts ~= &b;
+      foreach(i, ref b; a[0..$-1]) {
+        auto lXN = getXNeu(n,i);
+        auto rYN = getYNeu(n,i);
+          b.lefts ~= lXN;
+          b.rights ~= rYN;
+          lXN.rights ~= &b;
+          rYN.lefts ~= &b;
         }
 
     /* Link up Biases */
     foreach(n, ref a; m_weights) {
-      /* Link Weight to l/r neurons */
-      a[$-1].lefts ~= &m_neurons[n][$-1];
-      m_neurons[n][$-1].rights ~= &a[$-1];
+      auto wgt = &a[$-1];
+      auto lNeu = &m_neurons[n][$-1];
+      wgt.lefts ~= lNeu;
+      lNeu.rights ~= wgt;
       foreach(ref b; m_neurons[n+1][0..$-1]) {
-        m_weights[n][$-1].rights ~= &b;
-        b.lefts ~= &m_weights[n][$-1];
+        wgt.rights ~= &b;
+        b.lefts ~= wgt;
       }
-
-      /* Set bias on left neuron */
-      m_neurons[n][$-1].bias = true;
     }
+    m_weights[$-1][$-1].rights ~= &m_neurons[$-1][$-1];
+    m_neurons[$-1][$-1].lefts ~= &m_weights[$-1][$-1];
+
+    /* Set bias on left neuron */
+    foreach(a; m_neurons[0..$-1]) a[$-1].bias = true;
+
+    /* Set Neuron/Weight numbers */
+    uint count = 0;
+    foreach(x, ref a; m_neurons) foreach(y, ref b; a) {
+      if(b.bias) b.neuronNum = "b" ~ to!string(x);
+      else b.neuronNum = "n" ~ to!string(count++);
+    }
+    count = 0;
+    foreach(x, ref a; m_weights) foreach(y, ref b; a)
+      b.weightNum = "w" ~ to!string(count++);
+
     reset;
   }
 
   public auto calcError() {
     FPTemporary!double totalError = 0.0; // Init TE
     if(!fSet) return totalError;
-    foreach(i, a; m_neurons[$-1])
-      totalError += (1.0/2.0) * (a.target-a.value)^^2;
+    foreach(a; m_neurons[$-1]) totalError += a.error;
     return totalError;
   }
 
@@ -144,24 +214,37 @@ class NeuralNet {
     return true;
   }
 
+  public bool setWeights(double[] p_in) {
+    uint total = 0;
+    foreach(n,a; m_size[0..$-1]) total += m_size[n] * m_size[n+1] +1;
+    if(p_in.length != total) return false;
+    total = 0;
+    foreach(y, ref a; m_weights) foreach(x, ref b; a) b.weight = p_in[total++];
+    wSet = true;
+    return true;
+  }
+
+  public double[] getWeights() {
+    double[] output;
+    foreach(a; m_weights) {
+      foreach(b; a) output ~= b.weight;
+    }
+    return output;
+  }
+
+  public uint getWeightsLength() {
+    uint total = 0;
+    foreach(n,a; m_size[0..$-1]) total += m_size[n] * m_size[n+1] +1;
+    return total;
+  }
+
+  public void clearWeights() {
+    foreach(ref a; m_weights) foreach(ref b; a) b.weight = 0.0;
+  }
+
   public bool feedForward() {
     if(!wSet || !iSet || !tSet || fSet) return false;
-
-    /* Sigmoid Lambda */
-    auto sigmoid = (double pa) => 1/(1+E^^(-pa));
-
-    /* Iterate through neuron layers, 1..n */
-    foreach(n, ref a; m_neurons[1..$]) {
-      foreach(ref b; a[0..$]) {
-        if(b.bias) continue;
-        foreach(c; b.lefts){
-          enforce(c.lefts.length == 1);
-          if(c.lefts[0].bias) b.value += c.weight;
-          else b.value += c.weight * c.lefts[0].value;
-        }
-        b.value = sigmoid(b.value);
-      }
-    }
+    foreach(ref a; m_neurons) foreach(ref b; a) b.fire();
     fSet = true;
     return true;
   }
@@ -169,109 +252,79 @@ class NeuralNet {
   public bool backProp() {
     if(!fSet) return false;
 
-    foreach_reverse(n, ref a; m_weights){
-      foreach(x, ref b; a) {
-        if(n == m_weights.length-1) {
-          writeln("JK", b.toStringF());
-          writeln("o*(1-o)*(t-o)");
-        } else {
-          writeln("IJ",b);
-          writeln("o*(1-o)*d*Sum(w)");
-        }
-      }
-    }
+    /* Generate Weight Deltas */
+    foreach_reverse(n, ref a; m_weights)
+      foreach(y, ref b; a[0..$-1])
+        b.fire();
 
-    //FPTemporary!double[][] weightDelta;
-    //weightDelta.length = m_weights.length;
-    //foreach(i, a; m_weights)
-    //  weightDelta[i].length = a.length;
-    //FPTemporary!double[] biasDelta;
-    //biasDelta.length = m_biases.length;
-    //FPTemporary!double[] deltaNew;
-    //FPTemporary!double[] deltaOld;
-    //FPTemporary!double biasOld;
+    /* Apply Weight Deltas to Weights */
+    foreach(ref a; m_weights) foreach(ref b; a) b.mergeDelta;
 
-    /* Index Finders */
-    //auto OKayI = (ulong pn, ulong px) => px/m_layers[pn].length;
-    //auto OJayI = (ulong pn, ulong px) => px%m_layers[pn].length;
-
-    /* Object Finders */
-    //auto OKay = (ulong pn, ulong px)
-    //  { return m_layers[pn+1][OKayI(pn,px)]; };
-    //auto OJay = (ulong pn, ulong px)
-    //  { return m_layers[pn][OJayI(pn,px)]; };
-    //auto Target = (ulong pn, ulong px)
-    //  { return m_targets[OKayI(pn,px)]; };
-    //auto oldDelta = (ulong pn, ulong px)
-    //  { return deltaOld[OKayI(pn, px)]; };
-
-    /* Formulas */
-    //auto deltak = (double ok, double tgt)
-    //  { return ok*(1-ok)*(tgt-ok); };
-    //auto deltaj = (double ok, double wSum, double old)
-    //  { return ok*(1-ok)*wSum*old; };
-    //auto DeltaK = (ulong pn, ulong px)
-    //  { return deltak(OKay(pn,px), Target(pn,px)); };
-    //auto DeltaJ = (ulong pn, ulong px)
-    //  { return deltaj(OKay(pn,px), sum(m_weights[pn+1]), oldDelta(pn, px)); };
-
-    //auto DeltaW = (ulong pn, ulong px, double delegate(ulong, ulong) delta)
-    //  { return m_learnRate*delta(pn,px)*OJay(pn,px); };
-
-    /* Avgs */
-    //auto AvgDeltaK = (ulong pn) {
-    //  FPTemporary!double[] deltas;
-    //  foreach(i, o; m_layers[pn+1]) deltas ~= deltak(o, m_targets[i]);
-    //  return sum(deltas)/deltas.length;
-    //};
-    //auto AvgDeltaJ = (ulong pn) {
-    //  FPTemporary!double[] deltas;
-    //  foreach(i, o; m_layers[pn+1])
-    //    deltas ~= deltaj(o, sum(m_weights[pn+1]), biasOld);
-    //  return sum(deltas)/deltas.length;
-    //};
-
-    /* Bias Function */
-    //auto DeltaBias = (ulong pn, double delegate(ulong) avg)
-    //  { return m_learnRate*avg(pn)*1.0; };
-
-    /* Process the Layers */
-    //foreach_reverse(n, a; m_weights){
-    //  if(n == m_weights.length-1) {/* jk iteration */
-    //    foreach(x, b; a) {
-    //      weightDelta[n][x] = DeltaW(n,x, DeltaK);
-    //      deltaOld ~= DeltaK(n,x);
-    //    }
-    //    /* Do the same for the biases */
-    //    biasDelta[n] = DeltaBias(n, AvgDeltaK);
-    //    biasOld = AvgDeltaK(n);
-    //  } else { /* ij iterations */
-    //    foreach(x, b; a) {
-    //      weightDelta[n][x] = DeltaW(n,x, DeltaJ);
-    //      deltaNew ~= DeltaJ(n,x);
-    //    }
-    //    /* Do the same for the biases */
-    //    biasDelta[n] = DeltaBias(n, AvgDeltaJ);
-    //    biasOld = AvgDeltaJ(n);
-    //    /* End of cycle maintenance */
-    //    deltaOld = deltaNew.dup;
-    //    deltaNew.length = 0;
-    //  }
-    //}
-
-    /* Apply deltas *//* Apply Momentum */
-    //foreach(y, ref a; m_weights) foreach(x, ref b; a)
-    //  b += weightDelta[y][x] + alpha * m_weightDelta[y][x];
-
-    //foreach(y, ref a; m_biases)
-    //  a += biasDelta[y] + alpha * m_biasDelta[y];
-
-    //m_weightDelta = weightDelta.dup;
-    //m_biasDelta = biasDelta.dup;
-    //fSet = false;
-    return false;
+    reset; fSet = false;
+    return true;
   }
 
+  public auto trainCycle() {
+    Tuple!(double, double) output;
+    if(!wSet || !iSet || !tSet) return output;
+    bool result;
+    if(!fSet) {
+      result = feedForward;
+      if(!result) return output;
+    }
+    output[0] = calcError;
+
+    result = backProp && feedForward;
+    if(!result) return output;
+    output[1] = calcError;
+    return output;
+  }
+
+  public auto train(in ulong p_cyc) {
+    Tuple!(double, double) output;
+    bool result;
+    if(!fSet) {
+      result = feedForward;
+      if(!result) return output;
+    }
+    output[0] = calcError;
+    for(int i = 0; i < p_cyc; ++i)
+      trainCycle;
+    output[1] = calcError;
+    return output;
+  }
+
+  public auto train(double p_thresh) {
+    Tuple!(double, long) output;
+    bool result;
+    if(!fSet) {
+      result = feedForward;
+      if(!result) return output;
+    }
+    output[0] = calcError;
+    auto cycle = 0;
+    auto start = MonoTime.currTime;
+    auto last = MonoTime.currTime;
+    while(calcError > p_thresh){
+      auto period = trainCycle;
+      ++cycle;
+      auto current = MonoTime.currTime;
+      auto diff = (current - last);
+      auto act = seconds(5);
+      if(diff > act) {
+        writeln(
+          "Training in Progress...",
+          " Start:", output[0],
+          " Current:", calcError,
+          " Target:", p_thresh,
+          " Cycle:", cycle,
+          " Time:",  current - start);
+        last = current;
+      }
+    }
+    output[1] = cycle;
+    return output;
+  }
 
   override string toString() {
     const ulong LIMIT = 10;
@@ -338,5 +391,4 @@ class NeuralNet {
     output ~= "-----------------------------------";
    return output;
   }
-
 }

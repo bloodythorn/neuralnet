@@ -13,6 +13,7 @@
 
 # Executables
 scratch
+scratch.exe
 
 # DUB
 .dub
@@ -21,9 +22,13 @@ __dummy.html
 
 #sublime
 neuralnet.sublime-project
+neuralnet.sublime-workspace
 
 # Code coverage
 *.lst
 
 # profile stuff
 trace.*
+
+#project files
+Weights.dat
