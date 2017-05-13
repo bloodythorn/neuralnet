@@ -24,12 +24,11 @@ void andGate() {
 
   /* One more time so we can view the output */
   foreach(a; andGate) {
-    writeln(a[0..$-1]);
+    writeln(a[0..$-1], [a[$-1]]);
     if(!net.setInputs(a[0..$-1])) { writeln("Inputs!"); return; }
     if(!net.setTargets([a[$-1]])) { writeln("Targets!"); return; }
     net.feedForward;
-    writeln("  ", net.getOutputs);
-    writeln("  ", net.calcError);
+    writeln("  ", net.getOutputs, " ", net.calcError);
   }
   /* As you will see from the output, it will only read 0.9, when both inputs
   are 0.9. */

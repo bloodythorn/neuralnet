@@ -5,5 +5,5 @@
 	"description": "A neural network implemented in D.",
 	"copyright": "Copyright © 2016, Thomas Green",
 	"license": "MIT",
-  "targetName": "scratch"
+  "targetName": "nn"
 }
